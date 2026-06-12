@@ -88,6 +88,21 @@ public class NativeDialogSample : MonoBehaviour
     }
 
     /// <summary>
+    /// Shows a submit dialog whose message contains HTML hyperlinks.
+    /// On Android and iOS the links open in the browser when tapped.
+    /// In the Unity Editor a custom window renders the links as clickable buttons.
+    /// </summary>
+    public void ShowDialogWithHyperlinks()
+    {
+        const string title = "Terms of Service";
+        const string message = "Please review our <a href=\"https://example.com/privacy\">Privacy Policy</a> and <a href=\"https://example.com/terms\">Terms of Service</a> before continuing.";
+        DialogManager.ShowSubmit(title, message, (bool result) =>
+        {
+            Debug.Log($"Dialog closed: {result}");
+        });
+    }
+
+    /// <summary>
     /// Shows a dialog that automatically dismisses after 3 seconds.
     /// Demonstrates how to programmatically close dialogs.
     /// </summary>

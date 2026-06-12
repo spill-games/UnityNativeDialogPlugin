@@ -8,19 +8,18 @@
 
 #import <Foundation/Foundation.h>
 
-@interface UNDialogManager : NSObject<UIAlertViewDelegate> {
+@interface UNDialogManager : NSObject {
     int _id;
     NSMutableDictionary *alerts;
-
     NSString *decideLabel;
     NSString *cancelLabel;
     NSString *closeLabel;
 }
 + (UNDialogManager*) sharedManager;
 - (int) showSelectDialog:(NSString *)msg;
-- (int) showSelectDialog:(NSString *)title message:(NSString*)msg;
+- (int) showSelectDialog:(NSString *)title message:(NSString *)msg;
 - (int) showSubmitDialog:(NSString *)msg;
-- (int) showSubmitDialog:(NSString *)title message:(NSString*)msg;
-- (void) dismissDialog:(int) theID;
-- (void) setLabelTitleWithDecide:(NSString*)decide cancel:(NSString*)cancel close:(NSString*) close;
+- (int) showSubmitDialog:(NSString *)title message:(NSString *)msg;
+- (void) dismissDialog:(int)theID;
+- (void) setLabelTitleWithDecide:(NSString *)decide cancel:(NSString *)cancel close:(NSString *)close;
 @end
