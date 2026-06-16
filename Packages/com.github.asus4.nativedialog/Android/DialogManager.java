@@ -91,8 +91,11 @@ public class DialogManager {
                     .setMessage(msg)
                     .setNegativeButton(cancelLabel, negativeListener)
                     .setPositiveButton(decideLabel, positiveListener)
-                    .show();
+                    .create();
 
+                alertDialog.setCanceledOnTouchOutside(false);
+                alertDialog.setCancelable(false);
+                alertDialog.show();
                 applyHtmlLinks(alertDialog, msg);
                 _dialogs.put(Integer.valueOf(id), alertDialog);
             }
@@ -133,8 +136,11 @@ public class DialogManager {
                     .setMessage(msg)
                     .setNegativeButton(cancelLabel, negativeListener)
                     .setPositiveButton(decideLabel, positiveListener)
-                    .show();
+                    .create();
 
+                alertDialog.setCanceledOnTouchOutside(false);
+                alertDialog.setCancelable(false);
+                alertDialog.show();
                 applyHtmlLinks(alertDialog, msg);
                 _dialogs.put(Integer.valueOf(id), alertDialog);
             }
@@ -165,8 +171,11 @@ public class DialogManager {
                 AlertDialog alertDialog = new AlertDialog.Builder(a)
                     .setMessage(msg)
                     .setPositiveButton(closeLabel, positiveListener)
-                    .show();
+                    .create();
 
+                alertDialog.setCanceledOnTouchOutside(false);
+                alertDialog.setCancelable(false);
+                alertDialog.show();
                 applyHtmlLinks(alertDialog, msg);
                 _dialogs.put(Integer.valueOf(id), alertDialog);
             }
@@ -199,8 +208,11 @@ public class DialogManager {
                     .setTitle(title)
                     .setMessage(msg)
                     .setPositiveButton(closeLabel, positiveListener)
-                    .show();
+                    .create();
 
+                alertDialog.setCanceledOnTouchOutside(false);
+                alertDialog.setCancelable(false);
+                alertDialog.show();
                 applyHtmlLinks(alertDialog, msg);
                 _dialogs.put(Integer.valueOf(id), alertDialog);
             }

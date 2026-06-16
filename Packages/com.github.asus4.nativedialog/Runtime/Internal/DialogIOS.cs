@@ -38,6 +38,16 @@ namespace NativeDialog
             return _showSubmitTitleDialog(title, message);
         }
 
+        public int ShowSelect(string title, string message, DialogLink[] links)
+        {
+            return _showSelectTitleDialog(title, DialogManager.BuildHtmlFromLinks(message, links));
+        }
+
+        public int ShowSubmit(string title, string message, DialogLink[] links)
+        {
+            return _showSubmitTitleDialog(title, DialogManager.BuildHtmlFromLinks(message, links));
+        }
+
         public void Dismiss(int id)
         {
             _dismissDialog(id);

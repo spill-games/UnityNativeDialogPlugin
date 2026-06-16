@@ -1,28 +1,78 @@
 # Unity Native Dialog Plugin
 
-A lightweight Unity plugin for displaying native iOS and Android dialog boxes. Perfect for confirmation prompts, alerts, and user notifications with platform-specific styling.
+A lightweight Unity plugin for displaying native iOS and Android dialog boxes with full hyperlink support. Dialogs use platform-native styling and cannot be dismissed by tapping outside.
 
-## 🚀 Quick Start
+## Install via UPM
 
-### Basic Usage
+1. Open the Package Manager Window.
+2. Click `+` and select "Add package from git URL".
+3. Paste:
+`https://github.com/asus4/UnityNativeDialogPlugin.git?path=/Packages/com.github.asus4.nativedialog#v1.2.0`
+
+## Usage
 
 ```csharp
 using NativeDialog;
+```
 
-// Show a simple OK/Cancel dialog
-DialogManager.ShowSelect("Are you sure?", (bool result) => {
-    Debug.Log($"User selected: {result}");
-});
+### Submit dialog (one button)
 
-// Show a notification dialog with OK button only
-DialogManager.ShowSubmit("Operation completed!", (bool result) => {
+```csharp
+DialogManager.ShowSubmit("Operation completed!", result =>
+{
     Debug.Log("Dialog closed");
 });
 ```
 
-For more examples, see [NativeDialogSample.cs](Assets/NativeDialogSample.cs)
+### Select dialog (OK / Cancel)
 
-## 📱 Screenshots
+```csharp
+DialogManager.ShowSelect("Are you sure?", result =>
+{
+    if (result) Debug.Log("Confirmed");
+    else Debug.Log("Cancelled");
+});
+```
+
+### With title
+
+```csharp
+DialogManager.ShowSubmit("Notice", "Something happened.", result => { });
+
+DialogManager.ShowSelect("Confirm", "Do you want to proceed?", result => { });
+```
+
+### With tappable hyperlinks
+
+Pass a plain-text `message` and a `DialogLink[]`. Each `Text` value must appear verbatim in the message — the link is injected automatically. Works on Android, iOS, and the Unity Editor.
+
+```csharp
+DialogManager.ShowSubmit(
+    "Privacy Notice",
+    "Please read our Privacy Policy and Terms of Service before continuing.",
+    new DialogLink[]
+    {
+        new DialogLink { Text = "Privacy Policy",   Url = "https://example.com/privacy" },
+        new DialogLink { Text = "Terms of Service", Url = "https://example.com/terms" },
+    },
+    result => { }
+);
+```
+
+### Custom button labels
+
+```csharp
+DialogManager.SetLabel(decide: "Yes", cancel: "No", close: "OK");
+```
+
+### Programmatic dismiss
+
+```csharp
+int id = DialogManager.ShowSelect("Wait...", result => { });
+DialogManager.Dismiss(id); // closes the dialog and fires callback with false
+```
+
+## Screenshots
 
 ### Android
 
@@ -36,15 +86,6 @@ https://github.com/user-attachments/assets/4760a655-3fbf-4781-a084-6848f53da53c
 
 ![Editor Fallback](https://github.com/user-attachments/assets/3fdb094d-397e-4af7-92e9-8ca75d323f50)
 
-## Install via UPM
-
-![package-from-git](https://github.com/user-attachments/assets/45562439-5c37-4940-afe5-a5fb59eb6849)
-
-1. Open the Package Manager Window.
-2. Click `+` and select "Add package from git URL".
-3. Paste the following URL:  
-`https://github.com/asus4/UnityNativeDialogPlugin.git?path=/Packages/com.github.asus4.nativedialog#v1.2.0`
-
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).

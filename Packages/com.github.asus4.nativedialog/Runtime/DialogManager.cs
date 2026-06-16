@@ -174,6 +174,38 @@ namespace NativeDialog
         }
 
         /// <summary>
+        /// Shows a selection dialog with title, plain-text message, and structured hyperlinks.
+        /// Links are rendered as inline clickable text on every platform — no HTML markup required.
+        /// </summary>
+        /// <param name="title">The dialog title</param>
+        /// <param name="message">Plain-text message; each <see cref="DialogLink.Text"/> value must appear verbatim in this string.</param>
+        /// <param name="links">Hyperlinks to embed within the message</param>
+        /// <param name="callback">Callback invoked with true for OK, false for Cancel</param>
+        /// <returns>Dialog ID that can be used to dismiss the dialog</returns>
+        public static int ShowSelect(string title, string message, DialogLink[] links, Action<bool> callback)
+        {
+            int id = Instance.dialog.ShowSelect(title, message, links);
+            Instance.callbacks.Add(id, callback);
+            return id;
+        }
+
+        /// <summary>
+        /// Shows a submit dialog with title, plain-text message, and structured hyperlinks.
+        /// Links are rendered as inline clickable text on every platform — no HTML markup required.
+        /// </summary>
+        /// <param name="title">The dialog title</param>
+        /// <param name="message">Plain-text message; each <see cref="DialogLink.Text"/> value must appear verbatim in this string.</param>
+        /// <param name="links">Hyperlinks to embed within the message</param>
+        /// <param name="callback">Callback invoked when the dialog is closed</param>
+        /// <returns>Dialog ID that can be used to dismiss the dialog</returns>
+        public static int ShowSubmit(string title, string message, DialogLink[] links, Action<bool> callback)
+        {
+            int id = Instance.dialog.ShowSubmit(title, message, links);
+            Instance.callbacks.Add(id, callback);
+            return id;
+        }
+
+        /// <summary>
         /// Programmatically dismisses a dialog.
         /// Invokes the callback with false (cancelled).
         /// </summary>
@@ -192,6 +224,28 @@ namespace NativeDialog
             {
                 Debug.LogWarning("undefined id:" + id);
             }
+        }
+
+        /// <summary>
+        /// Builds an HTML message string from a plain-text message and structured links.
+        /// Each link's Text is replaced with an HTML anchor tag pointing to its URL.
+        /// Used by platform implementations (Android, iOS) that render HTML natively.
+        /// </summary>
+        internal static string BuildHtmlFromLinks(string message, DialogLink[] links)
+        {
+            if (links == null || links.Length == 0)
+            {
+                return message;
+            }
+            string result = message;
+            foreach (var link in links)
+            {
+                if (!string.IsNullOrEmpty(link.Text) && !string.IsNullOrEmpty(link.Url))
+                {
+                    result = result.Replace(link.Text, $"<a href=\"{link.Url}\">{link.Text}</a>");
+                }
+            }
+            return result;
         }
 
         #endregion // Public Methods

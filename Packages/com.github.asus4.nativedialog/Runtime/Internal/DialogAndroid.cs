@@ -46,6 +46,16 @@ namespace NativeDialog
             return cls.CallStatic<int>("ShowSubmitTitleDialog", title, message);
         }
 
+        public int ShowSelect(string title, string message, DialogLink[] links)
+        {
+            return cls.CallStatic<int>("ShowSelectTitleDialog", title, DialogManager.BuildHtmlFromLinks(message, links));
+        }
+
+        public int ShowSubmit(string title, string message, DialogLink[] links)
+        {
+            return cls.CallStatic<int>("ShowSubmitTitleDialog", title, DialogManager.BuildHtmlFromLinks(message, links));
+        }
+
         public void Dismiss(int id)
         {
             cls.CallStatic("DismissDialog", id);

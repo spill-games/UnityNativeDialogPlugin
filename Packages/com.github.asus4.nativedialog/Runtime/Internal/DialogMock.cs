@@ -67,6 +67,22 @@ namespace NativeDialog
             return newID;
         }
 
+        public int ShowSelect(string title, string message, DialogLink[] links)
+        {
+            int newID = ++id;
+            Debug.Log($"{newID}: ShowSelect: {title}, {message} [{links?.Length ?? 0} link(s)]");
+            ExecuteMockCallback(newID);
+            return newID;
+        }
+
+        public int ShowSubmit(string title, string message, DialogLink[] links)
+        {
+            int newID = ++id;
+            Debug.Log($"{newID}: ShowSubmit: {title}, {message} [{links?.Length ?? 0} link(s)]");
+            ExecuteMockCallback(newID);
+            return newID;
+        }
+
         public void Dismiss(int id)
         {
             Debug.Log($"Dismiss: {id}");
