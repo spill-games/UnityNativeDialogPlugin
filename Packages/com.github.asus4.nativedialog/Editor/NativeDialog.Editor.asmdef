@@ -1,0 +1,18 @@
+{
+    "name": "NativeDialog.Editor",
+    "rootNamespace": "NativeDialog.Editor",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "UnityEditor.iOS.Extensions.Xcode.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

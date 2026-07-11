@@ -287,20 +287,26 @@ static UNDialogManager *sharedDialogManager;
 }
 
 - (void) dismissDialog:(int)theID {
-    UIAlertController *alert = alerts[@(theID)];
-    if (alert != nil)
-    {
-        dispatch_async(dispatch_get_main_queue(), ^{
+    // Dictionary reads/writes must happen on the same queue as inserts (the
+    // present blocks insert on the main queue). Doing the lookup on the caller
+    // thread races: a dismiss issued right after a show finds nothing (the
+    // insert block has not run yet), then the alert is presented and orphaned.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIAlertController *alert = alerts[@(theID)];
+        if (alert != nil)
+        {
             [alert dismissViewControllerAnimated:YES completion:nil];
-        });
-        [alerts removeObjectForKey:@(theID)];
-    }
+            [alerts removeObjectForKey:@(theID)];
+        }
+    });
 }
 
 - (void) setLabelTitleWithDecide:(NSString*)decide cancel:(NSString*)cancel close:(NSString*)close {
-    decideLabel = [NSString stringWithString:decide];
-    cancelLabel = [NSString stringWithString:cancel];
-    closeLabel = [NSString stringWithString:close];
+    // Guard against nil (a NULL C-string from Unity yields a nil NSString);
+    // -stringWithString: throws NSInvalidArgumentException on nil.
+    if (decide != nil) { decideLabel = [decide copy]; }
+    if (cancel != nil) { cancelLabel = [cancel copy]; }
+    if (close  != nil) { closeLabel  = [close copy]; }
 }
 
 @end
