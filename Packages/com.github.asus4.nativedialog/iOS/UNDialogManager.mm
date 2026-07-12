@@ -14,82 +14,87 @@
 extern void UnitySendMessage(const char *, const char *, const char *);
 extern UIViewController* UnityGetGLViewController();
 
-// Returns the app's active key window (scene-aware for iOS 13+).
-// This mirrors the presentation target used by the app's other working iOS
-// plugins (GoogleUMP, SpillGamesIOSController), which present on the key
-// window's rootViewController rather than UnityGetGLViewController().
-static UIWindow* ActiveKeyWindow()
+// Dedicated top-level windows that host presented alerts, keyed by dialog id.
+// Presenting on Unity's own view controller (or the app key window's root) is
+// unreliable here: on Unity 6 the alert lands on a window that sits *behind*
+// Unity's Metal render window, so it presents with no error but is never
+// visible. Hosting the alert in our own UIWindow at UIWindowLevelAlert
+// guarantees it renders above everything, regardless of Unity's window setup.
+static NSMutableDictionary<NSNumber *, UIWindow *> *AlertWindows()
+{
+    static NSMutableDictionary *dict;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ dict = [NSMutableDictionary dictionary]; });
+    return dict;
+}
+
+// Returns a foreground-active UIWindowScene (required to make a window visible
+// on iOS 13+), falling back to any window scene.
+static UIWindowScene* ActiveWindowScene()
 {
     UIApplication *app = [UIApplication sharedApplication];
-
     for (UIScene *scene in app.connectedScenes)
     {
-        if (![scene isKindOfClass:[UIWindowScene class]]) { continue; }
-        UIWindowScene *windowScene = (UIWindowScene *)scene;
-        for (UIWindow *w in windowScene.windows)
+        if ([scene isKindOfClass:[UIWindowScene class]] &&
+            scene.activationState == UISceneActivationStateForegroundActive)
         {
-            if (w.isKeyWindow) { return w; }
+            return (UIWindowScene *)scene;
         }
     }
-
-    for (UIWindow *w in app.windows)
+    for (UIScene *scene in app.connectedScenes)
     {
-        if (w.isKeyWindow) { return w; }
+        if ([scene isKindOfClass:[UIWindowScene class]])
+        {
+            return (UIWindowScene *)scene;
+        }
     }
-    return app.windows.firstObject;
+    return nil;
 }
 
-// Returns the view controller a modal should be presented on.
-//
-// IMPORTANT: does NOT prefer UnityGetGLViewController(). On Unity 6 / early app
-// startup that call returns a non-nil controller whose view is not yet in the
-// window hierarchy, and presenting on it is a silent no-op — the alert never
-// appears and no error is logged. We resolve from the active key window's
-// rootViewController (the path the app's other plugins use successfully), fall
-// back to the GL view controller only if there is no root, then walk the
-// presentedViewController chain so we never present on a controller that is
-// already presenting.
-static UIViewController* TopPresentingViewController()
+// Hides and releases the dedicated window for a dialog id so touch events pass
+// back to Unity once the alert is gone.
+static void TeardownAlertWindow(int dialogId)
 {
-    UIViewController *vc = ActiveKeyWindow().rootViewController;
-    if (vc == nil)
+    UIWindow *window = AlertWindows()[@(dialogId)];
+    if (window != nil)
     {
-        vc = UnityGetGLViewController();
+        window.hidden = YES;
+        [AlertWindows() removeObjectForKey:@(dialogId)];
+        NSLog(@"[UNDialog] tore down window id=%d", dialogId);
     }
-
-    while (vc.presentedViewController != nil)
-    {
-        vc = vc.presentedViewController;
-    }
-    return vc;
 }
 
-// Presents the alert, retrying on the main queue if the window hierarchy is not
-// ready yet. The compliance dialog fires during app initialization, before the
-// key window may be attached; presenting then is a silent no-op. Retry a bounded
-// number of times (~2s total) until a host controller whose view is in a window
-// is available.
-static void PresentAlertWhenReady(UIAlertController *alert, int attemptsLeft)
+// Presents the alert in its own top-level window. Retries on the main queue if
+// no foreground window scene exists yet (dialog can fire during app init).
+static void PresentAlertInOwnWindow(UIAlertController *alert, int dialogId, int attemptsLeft)
 {
-    UIViewController *host = TopPresentingViewController();
-    BOOL ready = (host != nil && host.viewLoaded && host.view.window != nil);
-
-    if (!ready && attemptsLeft > 0)
+    UIWindowScene *scene = ActiveWindowScene();
+    if (scene == nil && attemptsLeft > 0)
     {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            PresentAlertWhenReady(alert, attemptsLeft - 1);
+            PresentAlertInOwnWindow(alert, dialogId, attemptsLeft - 1);
         });
         return;
     }
 
-    if (host == nil)
-    {
-        NSLog(@"[UNDialog] no host view controller available; alert not shown");
-        return;
-    }
+    UIWindow *window = scene ? [[UIWindow alloc] initWithWindowScene:scene]
+                             : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    window.windowLevel = UIWindowLevelAlert + 1;
+    window.backgroundColor = [UIColor clearColor];
 
-    [host presentViewController:alert animated:YES completion:nil];
+    UIViewController *root = [[UIViewController alloc] init];
+    root.view.backgroundColor = [UIColor clearColor];
+    window.rootViewController = root;
+    [window makeKeyAndVisible];
+
+    AlertWindows()[@(dialogId)] = window;
+
+    NSLog(@"[UNDialog] presenting id=%d scene=%@ window=%@ level=%f",
+          dialogId, scene, window, window.windowLevel);
+    [root presentViewController:alert animated:YES completion:^{
+        NSLog(@"[UNDialog] present completion fired id=%d", dialogId);
+    }];
 }
 
 // Returns YES if the message string contains HTML anchor tags.
@@ -169,6 +174,7 @@ extern "C" {
     }
 
     int _showSelectTitleDialog(const char *title, const char *msg) {
+        NSLog(@"[UNDialog] _showSelectTitleDialog entered");
         return [[UNDialogManager sharedManager]
                 showSelectDialog:[NSString stringWithUTF8String:title]
                          message:[NSString stringWithUTF8String:msg]];
@@ -180,6 +186,7 @@ extern "C" {
     }
 
     int _showSubmitTitleDialog(const char *title, const char *msg) {
+        NSLog(@"[UNDialog] _showSubmitTitleDialog entered");
         return [[UNDialogManager sharedManager]
                 showSubmitDialog:[NSString stringWithUTF8String:title]
                          message:[NSString stringWithUTF8String:msg]];
@@ -285,6 +292,7 @@ static UNDialogManager *sharedDialogManager;
             NSString *idStr = [NSString stringWithFormat:@"%d", dialogId];
             UnitySendMessage("DialogManager", "OnCancel", idStr.UTF8String);
             [alertsRef removeObjectForKey:@(dialogId)];
+            TeardownAlertWindow(dialogId);
         }]];
 
         [alert addAction:[UIAlertAction actionWithTitle:decideLabelCopy
@@ -293,10 +301,11 @@ static UNDialogManager *sharedDialogManager;
             NSString *idStr = [NSString stringWithFormat:@"%d", dialogId];
             UnitySendMessage("DialogManager", "OnSubmit", idStr.UTF8String);
             [alertsRef removeObjectForKey:@(dialogId)];
+            TeardownAlertWindow(dialogId);
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        PresentAlertWhenReady(alert, 20);
+        PresentAlertInOwnWindow(alert, dialogId, 20);
     });
 
     return dialogId;
@@ -317,6 +326,7 @@ static UNDialogManager *sharedDialogManager;
             NSString *idStr = [NSString stringWithFormat:@"%d", dialogId];
             UnitySendMessage("DialogManager", "OnCancel", idStr.UTF8String);
             [alertsRef removeObjectForKey:@(dialogId)];
+            TeardownAlertWindow(dialogId);
         }]];
 
         [alert addAction:[UIAlertAction actionWithTitle:decideLabelCopy
@@ -325,10 +335,11 @@ static UNDialogManager *sharedDialogManager;
             NSString *idStr = [NSString stringWithFormat:@"%d", dialogId];
             UnitySendMessage("DialogManager", "OnSubmit", idStr.UTF8String);
             [alertsRef removeObjectForKey:@(dialogId)];
+            TeardownAlertWindow(dialogId);
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        PresentAlertWhenReady(alert, 20);
+        PresentAlertInOwnWindow(alert, dialogId, 20);
     });
 
     return dialogId;
@@ -348,10 +359,11 @@ static UNDialogManager *sharedDialogManager;
             NSString *idStr = [NSString stringWithFormat:@"%d", dialogId];
             UnitySendMessage("DialogManager", "OnSubmit", idStr.UTF8String);
             [alertsRef removeObjectForKey:@(dialogId)];
+            TeardownAlertWindow(dialogId);
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        PresentAlertWhenReady(alert, 20);
+        PresentAlertInOwnWindow(alert, dialogId, 20);
     });
 
     return dialogId;
@@ -371,10 +383,11 @@ static UNDialogManager *sharedDialogManager;
             NSString *idStr = [NSString stringWithFormat:@"%d", dialogId];
             UnitySendMessage("DialogManager", "OnSubmit", idStr.UTF8String);
             [alertsRef removeObjectForKey:@(dialogId)];
+            TeardownAlertWindow(dialogId);
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        PresentAlertWhenReady(alert, 20);
+        PresentAlertInOwnWindow(alert, dialogId, 20);
     });
 
     return dialogId;
@@ -392,6 +405,7 @@ static UNDialogManager *sharedDialogManager;
             [alert dismissViewControllerAnimated:YES completion:nil];
             [alerts removeObjectForKey:@(theID)];
         }
+        TeardownAlertWindow(theID);
     });
 }
 
