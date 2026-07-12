@@ -14,58 +14,105 @@
 extern void UnitySendMessage(const char *, const char *, const char *);
 extern UIViewController* UnityGetGLViewController();
 
+// Returns the view controller a modal should be presented on.
+// UnityGetGLViewController() can return nil in some Unity/UnityFramework
+// configurations (presenting on nil is a silent no-op, so the alert never
+// appears). Fall back to the key window's rootViewController, then walk the
+// presentedViewController chain so we never present on a controller that is
+// already presenting (which also drops the alert silently).
+static UIViewController* TopPresentingViewController()
+{
+    UIViewController *vc = UnityGetGLViewController();
+
+    if (vc == nil)
+    {
+        UIWindow *keyWindow = nil;
+        for (UIWindow *w in [UIApplication sharedApplication].windows)
+        {
+            if (w.isKeyWindow) { keyWindow = w; break; }
+        }
+        if (keyWindow == nil)
+        {
+            keyWindow = [UIApplication sharedApplication].windows.firstObject;
+        }
+        vc = keyWindow.rootViewController;
+    }
+
+    while (vc.presentedViewController != nil)
+    {
+        vc = vc.presentedViewController;
+    }
+    return vc;
+}
+
 // Returns YES if the message string contains HTML anchor tags.
 static BOOL MessageContainsLinks(NSString *msg)
 {
     return [msg rangeOfString:@"<a " options:NSCaseInsensitiveSearch].location != NSNotFound;
 }
 
-// Converts an HTML string to an NSAttributedString with appropriate font and adaptive colors.
-// Falls back to plain text on parse error.
+// Converts the link-annotated string built by DialogManager.BuildHtmlFromLinks
+// (plain text with <a href="url">text</a> anchors) into an NSAttributedString.
+//
+// This intentionally does NOT use NSAttributedString's NSHTMLTextDocumentType
+// importer: that importer spins up WebKit's WebContent process, which the app
+// sandbox denies ("deny process-info-codesignature ... com.apple.WebKit.WebContent").
+// The denied/blocked import returns nothing on the main thread, so the alert
+// never presents. Parsing the simple anchor markup ourselves keeps everything
+// on-thread with no WebKit dependency.
 static NSAttributedString* AttributedStringFromHTML(NSString *html)
 {
-    NSData *data = [html dataUsingEncoding:NSUTF8StringEncoding];
-    if (data == nil)
-    {
-        return [[NSAttributedString alloc] initWithString:html];
-    }
-
-    NSDictionary *parseOptions = @{
-        NSDocumentTypeDocumentAttribute: NSHTMLTextDocumentType,
-        NSCharacterEncodingDocumentAttribute: @(NSUTF8StringEncoding)
+    UIFont *font = [UIFont systemFontOfSize:13.0];
+    NSDictionary *plainAttrs = @{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: [UIColor labelColor]
     };
-    NSError *error = nil;
-    NSMutableAttributedString *attrStr = [[NSMutableAttributedString alloc]
-        initWithData:data
-            options:parseOptions
- documentAttributes:nil
-               error:&error];
 
-    if (error != nil || attrStr == nil)
+    NSError *error = nil;
+    NSRegularExpression *re = [NSRegularExpression
+        regularExpressionWithPattern:@"<a[^>]*href=\"([^\"]*)\"[^>]*>(.*?)</a>"
+                             options:NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators
+                               error:&error];
+
+    if (re == nil)
     {
-        return [[NSAttributedString alloc] initWithString:html];
+        return [[NSAttributedString alloc] initWithString:html attributes:plainAttrs];
     }
 
-    NSRange fullRange = NSMakeRange(0, attrStr.length);
+    NSMutableAttributedString *result = [[NSMutableAttributedString alloc] init];
+    NSUInteger cursor = 0;
+    NSArray<NSTextCheckingResult *> *matches =
+        [re matchesInString:html options:0 range:NSMakeRange(0, html.length)];
 
-    // Apply system font and adaptive text color to the entire string
-    [attrStr addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:13.0] range:fullRange];
-    [attrStr addAttribute:NSForegroundColorAttributeName value:[UIColor labelColor] range:fullRange];
-
-    // Restore link color and underline for anchor tag ranges
-    [attrStr enumerateAttribute:NSLinkAttributeName
-                        inRange:fullRange
-                        options:0
-                     usingBlock:^(id value, NSRange range, BOOL *stop)
+    for (NSTextCheckingResult *match in matches)
     {
-        if (value != nil)
+        // Plain text preceding this anchor.
+        if (match.range.location > cursor)
         {
-            [attrStr addAttribute:NSForegroundColorAttributeName value:[UIColor systemBlueColor] range:range];
-            [attrStr addAttribute:NSUnderlineStyleAttributeName value:@(NSUnderlineStyleSingle) range:range];
+            NSString *plain = [html substringWithRange:NSMakeRange(cursor, match.range.location - cursor)];
+            [result appendAttributedString:[[NSAttributedString alloc] initWithString:plain attributes:plainAttrs]];
         }
-    }];
 
-    return attrStr;
+        NSString *url = [html substringWithRange:[match rangeAtIndex:1]];
+        NSString *text = [html substringWithRange:[match rangeAtIndex:2]];
+        NSDictionary *linkAttrs = @{
+            NSFontAttributeName: font,
+            NSLinkAttributeName: url,
+            NSForegroundColorAttributeName: [UIColor systemBlueColor],
+            NSUnderlineStyleAttributeName: @(NSUnderlineStyleSingle)
+        };
+        [result appendAttributedString:[[NSAttributedString alloc] initWithString:text attributes:linkAttrs]];
+        cursor = match.range.location + match.range.length;
+    }
+
+    // Trailing plain text after the last anchor.
+    if (cursor < html.length)
+    {
+        NSString *plain = [html substringFromIndex:cursor];
+        [result appendAttributedString:[[NSAttributedString alloc] initWithString:plain attributes:plainAttrs]];
+    }
+
+    return result;
 }
 
 extern "C" {
@@ -202,7 +249,7 @@ static UNDialogManager *sharedDialogManager;
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        [UnityGetGLViewController() presentViewController:alert animated:YES completion:nil];
+        [TopPresentingViewController() presentViewController:alert animated:YES completion:nil];
     });
 
     return dialogId;
@@ -234,7 +281,7 @@ static UNDialogManager *sharedDialogManager;
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        [UnityGetGLViewController() presentViewController:alert animated:YES completion:nil];
+        [TopPresentingViewController() presentViewController:alert animated:YES completion:nil];
     });
 
     return dialogId;
@@ -257,7 +304,7 @@ static UNDialogManager *sharedDialogManager;
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        [UnityGetGLViewController() presentViewController:alert animated:YES completion:nil];
+        [TopPresentingViewController() presentViewController:alert animated:YES completion:nil];
     });
 
     return dialogId;
@@ -280,7 +327,7 @@ static UNDialogManager *sharedDialogManager;
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        [UnityGetGLViewController() presentViewController:alert animated:YES completion:nil];
+        [TopPresentingViewController() presentViewController:alert animated:YES completion:nil];
     });
 
     return dialogId;
