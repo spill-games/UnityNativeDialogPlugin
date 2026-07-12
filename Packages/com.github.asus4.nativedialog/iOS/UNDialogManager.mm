@@ -14,28 +14,47 @@
 extern void UnitySendMessage(const char *, const char *, const char *);
 extern UIViewController* UnityGetGLViewController();
 
+// Returns the app's active key window (scene-aware for iOS 13+).
+// This mirrors the presentation target used by the app's other working iOS
+// plugins (GoogleUMP, SpillGamesIOSController), which present on the key
+// window's rootViewController rather than UnityGetGLViewController().
+static UIWindow* ActiveKeyWindow()
+{
+    UIApplication *app = [UIApplication sharedApplication];
+
+    for (UIScene *scene in app.connectedScenes)
+    {
+        if (![scene isKindOfClass:[UIWindowScene class]]) { continue; }
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
+        for (UIWindow *w in windowScene.windows)
+        {
+            if (w.isKeyWindow) { return w; }
+        }
+    }
+
+    for (UIWindow *w in app.windows)
+    {
+        if (w.isKeyWindow) { return w; }
+    }
+    return app.windows.firstObject;
+}
+
 // Returns the view controller a modal should be presented on.
-// UnityGetGLViewController() can return nil in some Unity/UnityFramework
-// configurations (presenting on nil is a silent no-op, so the alert never
-// appears). Fall back to the key window's rootViewController, then walk the
+//
+// IMPORTANT: does NOT prefer UnityGetGLViewController(). On Unity 6 / early app
+// startup that call returns a non-nil controller whose view is not yet in the
+// window hierarchy, and presenting on it is a silent no-op — the alert never
+// appears and no error is logged. We resolve from the active key window's
+// rootViewController (the path the app's other plugins use successfully), fall
+// back to the GL view controller only if there is no root, then walk the
 // presentedViewController chain so we never present on a controller that is
-// already presenting (which also drops the alert silently).
+// already presenting.
 static UIViewController* TopPresentingViewController()
 {
-    UIViewController *vc = UnityGetGLViewController();
-
+    UIViewController *vc = ActiveKeyWindow().rootViewController;
     if (vc == nil)
     {
-        UIWindow *keyWindow = nil;
-        for (UIWindow *w in [UIApplication sharedApplication].windows)
-        {
-            if (w.isKeyWindow) { keyWindow = w; break; }
-        }
-        if (keyWindow == nil)
-        {
-            keyWindow = [UIApplication sharedApplication].windows.firstObject;
-        }
-        vc = keyWindow.rootViewController;
+        vc = UnityGetGLViewController();
     }
 
     while (vc.presentedViewController != nil)
@@ -43,6 +62,34 @@ static UIViewController* TopPresentingViewController()
         vc = vc.presentedViewController;
     }
     return vc;
+}
+
+// Presents the alert, retrying on the main queue if the window hierarchy is not
+// ready yet. The compliance dialog fires during app initialization, before the
+// key window may be attached; presenting then is a silent no-op. Retry a bounded
+// number of times (~2s total) until a host controller whose view is in a window
+// is available.
+static void PresentAlertWhenReady(UIAlertController *alert, int attemptsLeft)
+{
+    UIViewController *host = TopPresentingViewController();
+    BOOL ready = (host != nil && host.viewLoaded && host.view.window != nil);
+
+    if (!ready && attemptsLeft > 0)
+    {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            PresentAlertWhenReady(alert, attemptsLeft - 1);
+        });
+        return;
+    }
+
+    if (host == nil)
+    {
+        NSLog(@"[UNDialog] no host view controller available; alert not shown");
+        return;
+    }
+
+    [host presentViewController:alert animated:YES completion:nil];
 }
 
 // Returns YES if the message string contains HTML anchor tags.
@@ -249,7 +296,7 @@ static UNDialogManager *sharedDialogManager;
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        [TopPresentingViewController() presentViewController:alert animated:YES completion:nil];
+        PresentAlertWhenReady(alert, 20);
     });
 
     return dialogId;
@@ -281,7 +328,7 @@ static UNDialogManager *sharedDialogManager;
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        [TopPresentingViewController() presentViewController:alert animated:YES completion:nil];
+        PresentAlertWhenReady(alert, 20);
     });
 
     return dialogId;
@@ -304,7 +351,7 @@ static UNDialogManager *sharedDialogManager;
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        [TopPresentingViewController() presentViewController:alert animated:YES completion:nil];
+        PresentAlertWhenReady(alert, 20);
     });
 
     return dialogId;
@@ -327,7 +374,7 @@ static UNDialogManager *sharedDialogManager;
         }]];
 
         [alertsRef setObject:alert forKey:@(dialogId)];
-        [TopPresentingViewController() presentViewController:alert animated:YES completion:nil];
+        PresentAlertWhenReady(alert, 20);
     });
 
     return dialogId;
